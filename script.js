@@ -192,10 +192,10 @@
   let pacerRunning = false;
   let pacerPaused = false;
   let pacerInterval = null;
-  let phaseTimeout = null;
   let sessionElapsed = 0;
   let currentPhase = 'inhale';
-  let phaseRemaining = 0;
+  let phaseCount = 1;
+  let phaseDuration = 0;
   let audioContext = null;
 
   function getSessionLength() { return Number(lengthSelect.value); }
@@ -229,10 +229,10 @@
     } catch (_) { /* Sound is optional. */ }
   }
   function setPhase(phase) {
-    if (!pacerRunning || pacerPaused) return;
     const pattern = getPattern();
     currentPhase = phase;
-    phaseRemaining = pattern[phase];
+    phaseDuration = pattern[phase];
+    phaseCount = 1;
     pacerInstruction.textContent = phase === 'inhale' ? 'Breathe in' : 'Breathe out';
     pacerSubtext.textContent = phase === 'inhale' ? 'Gently expand' : 'Slowly soften';
     pacerRings.classList.remove('active-inhale', 'active-exhale');
@@ -240,14 +240,23 @@
     pacerRings.style.setProperty('--inhale-duration', `${pattern.inhale}s`);
     pacerRings.style.setProperty('--exhale-duration', `${pattern.exhale}s`);
     pacerRings.classList.add(phase === 'inhale' ? 'active-inhale' : 'active-exhale');
-    pacerCount.textContent = phaseRemaining;
+    pacerCount.textContent = phaseCount;
     playCue(phase === 'inhale' ? 420 : 330);
-    clearTimeout(phaseTimeout);
-    phaseTimeout = setTimeout(() => setPhase(phase === 'inhale' ? 'exhale' : 'inhale'), pattern[phase] * 1000);
+  }
+  function tickPacer() {
+    sessionElapsed += 1;
+    if (phaseCount >= phaseDuration) {
+      // Full phase has been shown (1..phaseDuration) — switch to the other phase, count restarts at 1.
+      setPhase(currentPhase === 'inhale' ? 'exhale' : 'inhale');
+    } else {
+      phaseCount += 1;
+      pacerCount.textContent = phaseCount;
+    }
+    updatePacerTimer();
+    if (sessionElapsed >= getSessionLength()) finishPacer();
   }
   function finishPacer() {
     clearInterval(pacerInterval);
-    clearTimeout(phaseTimeout);
     pacerRunning = false;
     pacerPaused = false;
     pacerRings.classList.remove('active-inhale', 'active-exhale');
@@ -260,7 +269,6 @@
   }
   function resetPacer() {
     clearInterval(pacerInterval);
-    clearTimeout(phaseTimeout);
     pacerRunning = false;
     pacerPaused = false;
     sessionElapsed = 0;
@@ -278,20 +286,13 @@
       pacerPaused = false;
       startPacerButton.innerHTML = '<span>❚❚</span> Pause';
       setPhase('inhale');
-      pacerInterval = setInterval(() => {
-        sessionElapsed += 1;
-        phaseRemaining = Math.max(1, phaseRemaining - 1);
-        pacerCount.textContent = phaseRemaining;
-        updatePacerTimer();
-        if (sessionElapsed >= getSessionLength()) finishPacer();
-      }, 1000);
+      pacerInterval = setInterval(tickPacer, 1000);
       return;
     }
 
     if (!pacerPaused) {
       pacerPaused = true;
       clearInterval(pacerInterval);
-      clearTimeout(phaseTimeout);
       pacerRings.style.animationPlayState = 'paused';
       pacerInstruction.textContent = 'Paused';
       pacerSubtext.textContent = 'Resume when ready';
@@ -300,14 +301,8 @@
       pacerPaused = false;
       pacerRings.style.animationPlayState = 'running';
       startPacerButton.innerHTML = '<span>❚❚</span> Pause';
-      setPhase(currentPhase);
-      pacerInterval = setInterval(() => {
-        sessionElapsed += 1;
-        phaseRemaining = Math.max(1, phaseRemaining - 1);
-        pacerCount.textContent = phaseRemaining;
-        updatePacerTimer();
-        if (sessionElapsed >= getSessionLength()) finishPacer();
-      }, 1000);
+      // Resume where we left off — don't reset the phase/count, just continue the single clock.
+      pacerInterval = setInterval(tickPacer, 1000);
     }
   }
 
